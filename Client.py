@@ -18,11 +18,12 @@ class Client(object):
 	def authenticate(self, username, password):
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		s.connect((self.server_address, self.server_port))
-		userinfo = { 'username': username,
+		userinfo = { 'command': 'AUTH',
+					 'username': username,
 					 'password': password }
 		s.send(json.dumps(userinfo))
-		result = json.loads(s.recv(1024))
-		print result
+		response = json.loads(s.recv(1024))
+		print response['status'], ': User[', username, '] ', response['message']
 
 class  ClientCLI(object):
 	def __init__(self, host, port):
@@ -33,7 +34,7 @@ class  ClientCLI(object):
 			self.authentication()
 			self.client.start()
 			self.command()
-		except (KeyboardInterrupt, SystemExit):
+		except KeyboardInterrupt, SystemExit:
 			if self.client.started:
 				pass
 			print 'User [', self.client.username, '] has logged out.'
