@@ -1,6 +1,7 @@
 import socket
 import sys
 import json
+import thread
 
 TIME_OUT = 1800
 
@@ -9,11 +10,19 @@ class Client(object):
 		self.server_address = host
 		self.server_port = port
 		self.username = ''
-		self.started = False
+		self.port = 0
 		self.authorized = False
+		self.started = False
 
 	def start(self):
-		pass
+		'''
+		Client must be authorized first.
+		Start the listen thread to catch any messages coming from server
+		'''
+		if self.authorized:
+			self.listen()
+		else:
+			raise Exception('User not authorized!')
 
 	def authenticate(self, username, password):
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -22,8 +31,35 @@ class Client(object):
 					 'username': username,
 					 'password': password }
 		s.send(json.dumps(userinfo))
-		response = json.loads(s.recv(1024))
+		response = json.loads(s.recv(1024).strip())
+		s.close()
 		print response['status'], ': User[', username, '] ', response['message']
+		print response
+		if response['status'] == 'SUCCESS':
+			self.username = username
+			self.authorized = True
+			self.port = response['port']
+			return True
+		else:
+			return False
+
+	def listen(self):
+		'''
+		Create a socket binding the port assigned by the server
+		Whenever receives a command from server start a new thread to process the command
+		'''
+		ip = socket.gethostbyname(socket.gethostname())
+		listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		listen_socket.bind((ip, self.port))
+		while True:
+			conn, addr = listen_socket.accept()
+			thread.start_new_thread(self.listen_thread, (conn, addr))
+
+	def listen_thread(self, socket, addr):
+		'''
+		Listen thread to process the command sent from server
+		'''
+		command = json.loads(socket.recv(4096).strip())
 
 class  ClientCLI(object):
 	def __init__(self, host, port):
@@ -47,7 +83,10 @@ class  ClientCLI(object):
 				print 'Please don\' leave username or password blank.'
 				continue
 			elif self.client.authenticate(username, password):
-				break
+				return True
+
+	def command(self):
+		pass
 		
 
 def main():
