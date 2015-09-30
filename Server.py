@@ -3,6 +3,7 @@ import socket
 import json
 import thread
 import datetime
+import random
 
 BLOCK_TIME = 60
 LAST_HOUR = 3600
@@ -27,6 +28,7 @@ class Server:
 											 # ip is a dict since we are blocking on the 
 											 # (ip, username) pair
 											 'ip_address': {},
+											 'ip': '',
 											 'port': 0,
 											 'online': False,
 											 'logout_time': None,
@@ -95,11 +97,14 @@ class Server:
 								 	 'message': 'user is already online.' }
 					else:
 						user['online'] = True
+						user['ip'] = ip
 						user['last_command'] = datetime.datetime.now()
 						# reset the login attempts
 						user_ip['login_attempts'] = 0
 						user_ip['last_attempt'] = datetime.datetime.now()
+						user['port'] = random.randint(10000, 50000)
 						response = { 'status': 'SUCCESS',
+									 'port': user['port'],
 								 	 'message': 'Welcome to the simple chat server!' }
 
 				else:
@@ -111,6 +116,7 @@ class Server:
 			response = { 'status': 'ERROR',
 						 'message': 'username does not exist' }
 			
+		print user
 		client_socket.send(json.dumps(response))
 		# Close the client_socket at the end
 		client_socket.close()
