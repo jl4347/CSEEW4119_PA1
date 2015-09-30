@@ -21,7 +21,7 @@ class Client(object):
 		Start the listen thread to catch any messages coming from server
 		'''
 		if self.authorized:
-			self.listen()
+			thread.start_new_thread(self.listen, ())
 			self.started = True
 		else:
 			raise Exception('User not authorized!')
@@ -33,7 +33,7 @@ class Client(object):
 					 'username': username,
 					 'password': password }
 		s.send(json.dumps(userinfo))
-		response = json.loads(s.recv(1024).strip())
+		response = json.loads(s.recv(4096).strip())
 		s.close()
 		print response['status'], ': User[', username, '] ', response['message']
 		print response
@@ -62,7 +62,26 @@ class Client(object):
 		'''
 		Listen thread to process the command sent from server
 		'''
-		command = json.loads(socket.recv(4096).strip())
+		response = json.loads(socket.recv(4096).strip())
+		if response['status'] == 'SUCCESS':
+			if response['command'] == 'WHOELSE':
+				print response['message']
+
+	def logout(self):
+		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		s.connect((self.server_address, self.server_port))
+		request = { 'command': 'LOGOUT',
+					 'username': self.username }
+		s.send(json.dumps(request))
+		s.close()
+
+	def online_users(self):
+		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		s.connect((self.server_address, self.server_port))
+		request = { 'command': 'WHOELSE',
+					 'username': self.username }
+		s.send(json.dumps(request))
+		s.close()
 
 class  ClientCLI(object):
 	def __init__(self, host, port):
@@ -75,7 +94,7 @@ class  ClientCLI(object):
 			self.command()
 		except KeyboardInterrupt, SystemExit:
 			if self.client.started:
-				pass
+				self.client.logout()
 			print 'User [', self.client.username, '] has logged out.'
 
 	def authentication(self):
@@ -93,8 +112,20 @@ class  ClientCLI(object):
 		Take commands from client's command line interface
 		'''
 		while True:
+			print 'Command:'
 			commands = raw_input('')
-			print commands
+			if len(commands) == 0:
+				continue
+			command = commands.split(' ', 1)
+			print command
+			if command[0] == 'logout':
+				self.client.logout()
+				print 'User [', self.client.username, '] has logged out.'
+				sys.exit()
+			elif command[0] == 'whoelse':
+				self.client.online_users()
+			elif command[0] == 'wholast':
+				pass
 		
 
 def main():

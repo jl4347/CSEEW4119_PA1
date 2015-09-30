@@ -17,6 +17,7 @@ class Server:
 		# Listening port
 		self.port = port
 		# User info
+		self.online_users = []
 		self.users = {}
 		self.load_userinfo()
 
@@ -31,7 +32,6 @@ class Server:
 											 'ip': '',
 											 'port': 0,
 											 'online': False,
-											 'logout_time': None,
 											 'last_command': None }
 
 	def start(self):
@@ -47,14 +47,23 @@ class Server:
 			except KeyboardInterrupt, SystemExit:
 				server_socket.close()
 				print 'Chat room shut down....'
+				sys.exit()
 
 	def client_thread(self, socket, address):
 		print 'Connection from ', address
 		data = json.loads(socket.recv(4096).strip())
 		command = data['command']
+		print command
 
 		if command == 'AUTH':
 			self.authenticate(socket, data, address)
+		elif command == 'LOGOUT':
+			self.logout(data)
+		elif command == 'WHOELSE':
+			self.online(data)
+			
+
+		socket.close()
 
 	def authenticate(self, client_socket, data, address):
 		'''
@@ -63,7 +72,8 @@ class Server:
 		that IP address for BLOCK_TIME seconds.
 
 		If the user/password combination is valid, assign the user a random port and sends system
-		message to the user. The user should listen on the server assigned port for any incoming
+		message to the user. Server adds the user to the self.online_users to keep track of online
+		users. The user should listen on the server assigned port for any incoming
 		message.
 
 		If user/password combination is valid but the user is already online, reject the connection
@@ -96,6 +106,7 @@ class Server:
 						response = { 'status': 'ERROR',
 								 	 'message': 'user is already online.' }
 					else:
+						self.online_users.append(username)
 						user['online'] = True
 						user['ip'] = ip
 						user['last_command'] = datetime.datetime.now()
@@ -118,8 +129,39 @@ class Server:
 			
 		print user
 		client_socket.send(json.dumps(response))
-		# Close the client_socket at the end
-		client_socket.close()
+
+	def logout(self, data):
+		'''
+		Remove the user from the self.online_users list, and change the user's status
+		to offline
+		'''
+		self.online_users.remove(data['username'])
+		user = self.users[data['username']]
+		user['ip'] = ''
+		user['online'] = False
+		user['port'] = 0
+		user['last_command'] = datetime.datetime.now()
+
+	def online(self, data):
+		'''
+		Retrieve the list of online users and remove the client who requested.
+		Send the list back to the client via client's listening socket
+		'''
+		online_list = list(self.online_users)
+		online_list.remove(data['username'])
+
+		user = self.users[data['username']]
+		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		s.connect((user['ip'], user['port']))
+		response = { 'status': 'SUCCESS',
+					 'command': 'WHOELSE',
+					 'message': online_list }
+		s.send(json.dumps(response))
+		s.close()
+
+		# update user info
+		user['last_command'] = datetime.datetime.now()
+
  
 def main():
 	if len(sys.argv) != 2:
