@@ -4,6 +4,7 @@ import json
 import thread
 
 TIME_OUT = 1800
+MAX_CONN = 100
 
 class Client(object):
 	def __init__(self, host, port):
@@ -21,6 +22,7 @@ class Client(object):
 		'''
 		if self.authorized:
 			self.listen()
+			self.started = True
 		else:
 			raise Exception('User not authorized!')
 
@@ -51,6 +53,7 @@ class Client(object):
 		ip = socket.gethostbyname(socket.gethostname())
 		listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		listen_socket.bind((ip, self.port))
+		listen_socket.listen(MAX_CONN)
 		while True:
 			conn, addr = listen_socket.accept()
 			thread.start_new_thread(self.listen_thread, (conn, addr))
@@ -86,7 +89,12 @@ class  ClientCLI(object):
 				return True
 
 	def command(self):
-		pass
+		'''
+		Take commands from client's command line interface
+		'''
+		while True:
+			commands = raw_input('')
+			print commands
 		
 
 def main():
