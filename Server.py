@@ -6,7 +6,7 @@ import datetime
 import random
 
 BLOCK_TIME = 60
-LAST_HOUR = 3600
+DEAD_ALIVE = 60
 MAX_USERS = 10
 
 class Server:
@@ -52,18 +52,20 @@ class Server:
 
 	def client_thread(self, socket, address):
 		print 'Connection from ', address
-		data = json.loads(socket.recv(4096).strip())
-		command = data['command']
+		request = json.loads(socket.recv(4096).strip())
+		command = request['command']
 		print command
 
 		if command == 'AUTH':
-			self.authenticate(socket, data, address)
+			self.authenticate(socket, request, address)
 		elif command == 'LOGOUT':
-			self.logout(data)
+			self.logout(request)
 		elif command == 'WHOELSE':
-			self.online(data)
+			self.online(request)
 		elif command == 'WHOLAST':
-			self.who_last(data)
+			self.who_last(request)
+		elif command == 'MESSAGE':
+			self.send_messages(request)
 			
 		socket.close()
 
@@ -146,23 +148,19 @@ class Server:
 
 	def online(self, data):
 		'''
-		Retrieve the list of online users and remove the client who requested.
+		'whoelse' command:
+
+ 		Retrieve the list of online users and remove the client who requested.
 		Send the list back to the client via client's listening socket
 		'''
 		online_list = list(self.online_users)
 		online_list.remove(data['username'])
 
 		user = self.users[data['username']]
-		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		s.connect((user['ip'], user['port']))
 		response = { 'status': 'SUCCESS',
 					 'command': 'WHOELSE',
 					 'message': online_list }
-		s.send(json.dumps(response))
-		s.close()
-
-		# update user info
-		user['last_command'] = datetime.datetime.now()
+		self.send_response(user, response)
 
 	def who_last(self, data):
 		user_list = []
@@ -178,14 +176,25 @@ class Server:
 
 		user = self.users[data['username']]
 		user_list.remove(data['username'])
-		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		s.connect((user['ip'], user['port']))
 		response = { 'status': 'SUCCESS',
 					 'command': 'WHOLAST',
 					 'message': user_list }
+		self.send_response(user, response)
+
+	def send_messages(self, request):
+		if not request['to']:
+			# broadcast to everyone
+			pass
+		else:
+			pass
+
+	def send_response(self, user, response):
+		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		s.connect((user['ip'], user['port']))
 		s.send(json.dumps(response))
 		s.close()
-
+		# update user info
+		user['last_command'] = datetime.datetime.now()
  
 def main():
 	if len(sys.argv) != 2:
