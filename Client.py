@@ -74,39 +74,35 @@ class Client(object):
 		socket.close()
 
 	def logout(self):
-		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		s.connect((self.server_address, self.server_port))
 		request = { 'command': 'LOGOUT',
 					 'username': self.username }
-		s.send(json.dumps(request))
-		s.close()
+		self.send_request(request)
 		# close the listening socket
 		self.listen_socket.close()
 
 	def online_users(self):
-		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		s.connect((self.server_address, self.server_port))
 		request = { 'command': 'WHOELSE',
 					 'username': self.username }
-		s.send(json.dumps(request))
-		s.close()
+		self.send_request(request)
 
 	def who_last(self, time_frame):
-		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		s.connect((self.server_address, self.server_port))
 		request = { 'command': 'WHOLAST',
 					 'username': self.username,
 					 'time_frame': time_frame }
-		s.send(json.dumps(request))
-		s.close()
+		self.send_request(request)
 
 	def send_message(self, command, to, message):
-		request = { 'command': '',
+		request = { 'command': 'MESSAGE',
 					'username': self.username,
 					'to': to,
 					'message': message }
-		if command == 'message':
-			pass
+		self.send_request(request)
+
+	def send_request(self, request):
+		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		s.connect((self.server_address, self.server_port))
+		s.send(json.dumps(request))
+		s.close()
 
 class  ClientCLI(object):
 	def __init__(self, host, port):
@@ -155,7 +151,7 @@ class  ClientCLI(object):
 				if len(command) < 2:
 					print 'Please enter the time frame you would like to trace back'
 					continue
-
+				# TODO catch the value error
 				time_frame = int(command[1])
 				if time_frame > 0 and time_frame <= 60:
 					self.client.who_last(int(command[1]))
@@ -171,7 +167,7 @@ class  ClientCLI(object):
 				user_message = command[1].split(' ', 1)
 				to.append(user_message[0])
 				if len(user_message) < 2:
-					print 'Wrong command format', \
+					print 'Wrong command format:', \
 						  'message <user> <message message>'
 					continue
 				self.client.send_message(command[0], to, user_message[1])
