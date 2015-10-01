@@ -70,6 +70,11 @@ class Client(object):
 				print 'who else: ', response['message']
 			if response['command'] == 'WHOLAST':
 				print 'who last: ', response['message']
+			if response['command'] == 'MESSAGE':
+				print response['from'], ': ', response['message']
+		elif response['status'] == 'WARNING':
+			if response['command'] == 'MESSAGE_FEEDBACK':
+				print response['status'], ': ', response['message']
 
 		socket.close()
 
@@ -87,15 +92,20 @@ class Client(object):
 
 	def who_last(self, time_frame):
 		request = { 'command': 'WHOLAST',
-					 'username': self.username,
-					 'time_frame': time_frame }
+					'username': self.username,
+					'time_frame': time_frame }
 		self.send_request(request)
 
 	def send_message(self, command, to, message):
-		request = { 'command': 'MESSAGE',
+		request = { 'command': '',
 					'username': self.username,
 					'to': to,
 					'message': message }
+		# Distinguish between private and broadcast message
+		if command == 'message':
+			request['command'] = 'MESSAGE_PRIVATE'
+		else:
+			request['command'] = 'MESSAGE_BROAD'
 		self.send_request(request)
 
 	def send_request(self, request):
@@ -171,8 +181,9 @@ class  ClientCLI(object):
 						  'message <user> <message message>'
 					continue
 				self.client.send_message(command[0], to, user_message[1])
-				
 
+			elif command[0] == 'broadcast':
+				pass
 
 def main():
 	if len(sys.argv) != 3:

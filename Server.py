@@ -64,8 +64,8 @@ class Server:
 			self.online(request)
 		elif command == 'WHOLAST':
 			self.who_last(request)
-		elif command == 'MESSAGE':
-			self.send_messages(request)
+		elif command[:7] == 'MESSAGE':
+			self.process_messages(request)
 			
 		socket.close()
 
@@ -181,12 +181,43 @@ class Server:
 					 'message': user_list }
 		self.send_response(user, response)
 
-	def send_messages(self, request):
+	def process_messages(self, request):
+		message_to = []
+
 		if not request['to']:
-			# broadcast to everyone
-			pass
+			# broadcast to everyone online
+			message_to = self.online_users
 		else:
-			pass
+			not_exist = []
+			not_online = []
+			for reciever in request['to']:
+				if reciever not in self.users:
+					not_exist.append(reciever)
+				elif self.users[reciever]['online'] == False:
+					not_online.append(reciever)
+				else:
+					message_to.append(reciever)
+			# Send feedback to the sender
+			if not_online or not_exist:
+				response = { 'status': 'WARNING',
+							 'command': 'MESSAGE_FEEDBACK',
+							 'message': 'Users ' + str(not_exist) + ' do not exist\n' +
+							 			'\tUsers ' + str(not_online) + ' not online.'}
+				self.send_response(self.users[request['username']], response)
+
+		if request['command'][8:] == 'BROAD':
+			message_to.remove(request['username'])
+		# Send message to each available user
+		for reciever in message_to:
+			self.send_message(reciever, request)
+
+	def send_message(self, reciever, request):
+		message = { 'status': 'SUCCESS',
+					'command': 'MESSAGE',
+					'from': request['username'],
+					'message': request['message'] }
+		self.send_response(self.users[reciever], message)
+
 
 	def send_response(self, user, response):
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
