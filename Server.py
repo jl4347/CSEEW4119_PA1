@@ -186,7 +186,7 @@ class Server:
 
 		if not request['to']:
 			# broadcast to everyone online
-			message_to = self.online_users
+			message_to = list(self.online_users)
 		else:
 			not_exist = []
 			not_online = []
@@ -206,7 +206,10 @@ class Server:
 				self.send_response(self.users[request['username']], response)
 
 		if request['command'][8:] == 'BROAD':
-			message_to.remove(request['username'])
+			print 'reciever: ', message_to
+			print 'online users: ', self.online_users
+			if request['username'] in message_to:
+				message_to.remove(request['username'])
 		# Send message to each available user
 		for reciever in message_to:
 			self.send_message(reciever, request)

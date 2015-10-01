@@ -173,17 +173,53 @@ class  ClientCLI(object):
 					print 'Wrong command format', \
 						  'message <user> <message message>'
 					continue
-				to = []
+				message_to = []
 				user_message = command[1].split(' ', 1)
-				to.append(user_message[0])
+				message_to.append(user_message[0])
 				if len(user_message) < 2:
-					print 'Wrong command format:', \
+					print 'Wrong command format:\n', \
 						  'message <user> <message message>'
 					continue
-				self.client.send_message(command[0], to, user_message[1])
+				self.client.send_message(command[0], message_to, user_message[1])
 
 			elif command[0] == 'broadcast':
-				pass
+				message_to = []
+				user_message = command[1]
+				user_group = False
+				if user_message[:4] == 'user': 
+					user_message = user_message.split(' ', 1)[1]
+					user_group = True
+					while len(user_message) > 7 and user_message[:7] != 'message':
+						user = user_message.split(' ', 1)
+						message_to.append(user[0])
+						user_message = user[1]
+
+				if user_group and not message_to:
+					print 'Wrong command format:\n', \
+						  'broadcast user <user> <user> message <message message>\n', \
+						  'broadcast message <message message>'
+					continue
+
+				message = user_message.split(' ', 1)[1]
+				self.client.send_message(command[0], message_to, message)
+
+			elif command[0] == 'help':
+				self.print_full_instruction()
+			else:
+				self.print_full_instruction()
+				
+
+	def print_full_instruction(self):
+		print 'User Instruction:\n', \
+			  '==========================================================\n', \
+			  'whoelse\n', \
+			  'wholast\n', \
+			  'broadcast user <user> <user> message <message message>\n', \
+			  'broadcast message <message message>\n', \
+			  'message <user> <message message>\n', \
+			  'logout\n', \
+			  '=========================================================='
+
 
 def main():
 	if len(sys.argv) != 3:
