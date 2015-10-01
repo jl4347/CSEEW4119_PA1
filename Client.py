@@ -5,6 +5,7 @@ import thread
 
 TIME_OUT = 1800
 MAX_CONN = 100
+HEARTBEAT = 30
 
 class Client(object):
 	def __init__(self, host, port):
@@ -109,10 +110,13 @@ class Client(object):
 		self.send_request(request)
 
 	def send_request(self, request):
-		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		s.connect((self.server_address, self.server_port))
-		s.send(json.dumps(request))
-		s.close()
+		try:
+			s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			s.connect((self.server_address, self.server_port))
+			s.send(json.dumps(request))
+			s.close()
+		except:
+			print 'Server is down....'
 
 class  ClientCLI(object):
 	def __init__(self, host, port):
@@ -189,28 +193,30 @@ class  ClientCLI(object):
 				if user_message[:4] == 'user': 
 					user_message = user_message.split(' ', 1)[1]
 					user_group = True
-					while len(user_message) > 7 and user_message[:7] != 'message':
+					while len(user_message.split(' ', 1)) > 1 and user_message[:7] != 'message':
 						user = user_message.split(' ', 1)
 						message_to.append(user[0])
 						user_message = user[1]
 
 				if user_group and not message_to:
-					print 'Wrong command format:\n', \
-						  'broadcast user <user> <user> message <message message>\n', \
-						  'broadcast message <message message>'
+					self.print_broadcast_instruction()
 					continue
 
-				message = user_message.split(' ', 1)[1]
-				self.client.send_message(command[0], message_to, message)
+				message = user_message.split(' ', 1)
+				if message[0] != 'message' or len(message) < 2:
+					self.print_broadcast_instruction()
+					continue
+				self.client.send_message(command[0], message_to, message[1])
 
 			elif command[0] == 'help':
 				self.print_full_instruction()
 			else:
-				self.print_full_instruction()
+				print 'Invalid Command, type \'help\' for User Instruction.'
 				
 
 	def print_full_instruction(self):
-		print 'User Instruction:\n', \
+		print '==========================================================\n', \
+			  'User Instruction:\n', \
 			  '==========================================================\n', \
 			  'whoelse\n', \
 			  'wholast\n', \
@@ -218,7 +224,15 @@ class  ClientCLI(object):
 			  'broadcast message <message message>\n', \
 			  'message <user> <message message>\n', \
 			  'logout\n', \
-			  '=========================================================='
+			  '==========================================================\n'
+
+	def print_broadcast_instruction(self):
+		print '==========================================================\n', \
+			  'Broadcast command Instruction:\n', \
+			  '==========================================================\n', \
+			  'broadcast user <user> <user> message <message message>\n', \
+			  'broadcast message <message message>\n', \
+			  '==========================================================\n'
 
 
 def main():

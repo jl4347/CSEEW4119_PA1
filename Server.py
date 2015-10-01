@@ -59,7 +59,7 @@ class Server:
 		if command == 'AUTH':
 			self.authenticate(socket, request, address)
 		elif command == 'LOGOUT':
-			self.logout(request)
+			self.logout(request['username'])
 		elif command == 'WHOELSE':
 			self.online(request)
 		elif command == 'WHOLAST':
@@ -134,13 +134,13 @@ class Server:
 		print user
 		client_socket.send(json.dumps(response))
 
-	def logout(self, data):
+	def logout(self, username):
 		'''
 		Remove the user from the self.online_users list, and change the user's status
 		to offline
 		'''
-		self.online_users.remove(data['username'])
-		user = self.users[data['username']]
+		self.online_users.remove(username)
+		user = self.users[username]
 		user['ip'] = ''
 		user['online'] = False
 		user['port'] = 0
@@ -183,50 +183,60 @@ class Server:
 
 	def process_messages(self, request):
 		message_to = []
-
+		not_found = []
 		if not request['to']:
 			# broadcast to everyone online
 			message_to = list(self.online_users)
 		else:
-			not_exist = []
-			not_online = []
 			for reciever in request['to']:
 				if reciever not in self.users:
-					not_exist.append(reciever)
+					not_found.append(reciever)
 				elif self.users[reciever]['online'] == False:
-					not_online.append(reciever)
+					not_found.append(reciever)
 				else:
 					message_to.append(reciever)
-			# Send feedback to the sender
-			if not_online or not_exist:
-				response = { 'status': 'WARNING',
-							 'command': 'MESSAGE_FEEDBACK',
-							 'message': 'Users ' + str(not_exist) + ' do not exist\n' +
-							 			'\tUsers ' + str(not_online) + ' not online.'}
-				self.send_response(self.users[request['username']], response)
 
 		if request['command'][8:] == 'BROAD':
 			print 'reciever: ', message_to
 			print 'online users: ', self.online_users
-			if request['username'] in message_to:
+			# client could broadcast to oneself when sending message to user group
+			if request['username'] in message_to and request['username'] not in request['to']:
 				message_to.remove(request['username'])
 		# Send message to each available user
 		for reciever in message_to:
-			self.send_message(reciever, request)
+			if not self.send_message(reciever, request):
+				not_found.append(reciever)
+
+		# Send feedback to the sender
+		if not_found:
+			response = { 'status': 'WARNING',
+						 'command': 'MESSAGE_FEEDBACK',
+						 'message': 'Users ' + str(not_found) + ' not found' }
+			self.send_response(self.users[request['username']], response)
 
 	def send_message(self, reciever, request):
 		message = { 'status': 'SUCCESS',
 					'command': 'MESSAGE',
 					'from': request['username'],
 					'message': request['message'] }
-		self.send_response(self.users[reciever], message)
-
+		if not self.send_response(self.users[reciever], message):
+			return False
+		else:
+			return True
 
 	def send_response(self, user, response):
-		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		s.connect((user['ip'], user['port']))
-		s.send(json.dumps(response))
-		s.close()
+		try:
+			s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			s.connect((user['ip'], user['port']))
+			s.send(json.dumps(response))
+			s.close()
+			return True
+		except:
+			print 'Unable to deliver message to ', user['ip'], ':', user['port']
+			if user['online']:
+				self.logout(user['username'])
+				print 'Log out User:', user['username']
+			return False
 		# update user info
 		user['last_command'] = datetime.datetime.now()
  
