@@ -12,6 +12,7 @@ class Client(object):
 		self.server_port = port
 		self.username = ''
 		self.port = 0
+		self.listen_socket = None
 		self.authorized = False
 		self.started = False
 
@@ -54,6 +55,7 @@ class Client(object):
 		listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		listen_socket.bind((ip, self.port))
 		listen_socket.listen(MAX_CONN)
+		self.listen_socket = listen_socket
 		while True:
 			conn, addr = listen_socket.accept()
 			thread.start_new_thread(self.listen_thread, (conn, addr))
@@ -65,7 +67,11 @@ class Client(object):
 		response = json.loads(socket.recv(4096).strip())
 		if response['status'] == 'SUCCESS':
 			if response['command'] == 'WHOELSE':
-				print response['message']
+				print 'who else: ', response['message']
+			if response['command'] == 'WHOLAST':
+				print 'who last: ', response['message']
+
+		socket.close()
 
 	def logout(self):
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -74,6 +80,8 @@ class Client(object):
 					 'username': self.username }
 		s.send(json.dumps(request))
 		s.close()
+		# close the listening socket
+		self.listen_socket.close()
 
 	def online_users(self):
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -82,6 +90,23 @@ class Client(object):
 					 'username': self.username }
 		s.send(json.dumps(request))
 		s.close()
+
+	def who_last(self, time_frame):
+		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		s.connect((self.server_address, self.server_port))
+		request = { 'command': 'WHOLAST',
+					 'username': self.username,
+					 'time_frame': time_frame }
+		s.send(json.dumps(request))
+		s.close()
+
+	def send_message(self, command, to, message):
+		request = { 'command': '',
+					'username': self.username,
+					'to': to,
+					'message': message }
+		if command == 'message':
+			pass
 
 class  ClientCLI(object):
 	def __init__(self, host, port):
@@ -111,8 +136,8 @@ class  ClientCLI(object):
 		'''
 		Take commands from client's command line interface
 		'''
+		print 'Command:'
 		while True:
-			print 'Command:'
 			commands = raw_input('')
 			if len(commands) == 0:
 				continue
@@ -122,11 +147,36 @@ class  ClientCLI(object):
 				self.client.logout()
 				print 'User [', self.client.username, '] has logged out.'
 				sys.exit()
+
 			elif command[0] == 'whoelse':
 				self.client.online_users()
+
 			elif command[0] == 'wholast':
-				pass
-		
+				if len(command) < 2:
+					print 'Please enter the time frame you would like to trace back'
+					continue
+
+				time_frame = int(command[1])
+				if time_frame > 0 and time_frame <= 60:
+					self.client.who_last(int(command[1]))
+				else:
+					print 'Warning: you can only trace back an hour'
+
+			elif command[0] == 'message':
+				if len(command) < 2:
+					print 'Wrong command format', \
+						  'message <user> <message message>'
+					continue
+				to = []
+				user_message = command[1].split(' ', 1)
+				to.append(user_message[0])
+				if len(user_message) < 2:
+					print 'Wrong command format', \
+						  'message <user> <message message>'
+					continue
+				self.client.send_message(command[0], to, user_message[1])
+				
+
 
 def main():
 	if len(sys.argv) != 3:

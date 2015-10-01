@@ -32,7 +32,8 @@ class Server:
 											 'ip': '',
 											 'port': 0,
 											 'online': False,
-											 'last_command': None }
+											 'last_command': None,
+											 'last_seen': None }
 
 	def start(self):
 		ip_address = socket.gethostbyname(socket.gethostname())
@@ -61,8 +62,9 @@ class Server:
 			self.logout(data)
 		elif command == 'WHOELSE':
 			self.online(data)
+		elif command == 'WHOLAST':
+			self.who_last(data)
 			
-
 		socket.close()
 
 	def authenticate(self, client_socket, data, address):
@@ -161,6 +163,28 @@ class Server:
 
 		# update user info
 		user['last_command'] = datetime.datetime.now()
+
+	def who_last(self, data):
+		user_list = []
+		for user in self.users:
+			user_dict = self.users[user]
+			if user_dict['online']:
+				user_list.append(user)
+			else:
+				if user_dict['last_command'] != None:
+					since_last = (datetime.datetime.now() - user_dict['last_command']).total_seconds()
+					if since_last <= data['time_frame']*60:
+						user_list.append(user)
+
+		user = self.users[data['username']]
+		user_list.remove(data['username'])
+		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		s.connect((user['ip'], user['port']))
+		response = { 'status': 'SUCCESS',
+					 'command': 'WHOLAST',
+					 'message': user_list }
+		s.send(json.dumps(response))
+		s.close()
 
  
 def main():
