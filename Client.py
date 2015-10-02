@@ -9,10 +9,14 @@ HEARTBEAT = 30
 BUFFSIZE = 4096
 
 class Client(object):
+	'''
+	This Client class is the one that does the real work communicating with server
+	'''
 	def __init__(self, host, port):
 		self.server_address = host
 		self.server_port = port
 		self.username = ''
+		# Connect to server's listening port
 		self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.socket.connect((host, port))
 		self.authorized = False
@@ -28,6 +32,9 @@ class Client(object):
 			raise Exception('User not authorized!')
 
 	def authenticate(self, username, password):
+		'''
+		Client send credentials to the server for authentication
+		'''
 		userinfo = { 'command': 'AUTH',
 					 'username': username,
 					 'password': password }
@@ -44,6 +51,9 @@ class Client(object):
 	def listen_thread(self):
 		'''
 		Listen thread to process the command sent from server
+
+		When the connection between the server and client is down, close the socket
+		and client would exit the program
 		'''
 		while True:
 			try:
@@ -72,23 +82,39 @@ class Client(object):
 					break
 
 	def logout(self):
+		'''
+		Send out logout request to server
+		'''
 		request = { 'command': 'LOGOUT',
 					'username': self.username }
 		self.send_request(request)
 		self.socket.close()
 
 	def online_users(self):
+		'''
+		Send 'whoelse' command to server to check other online users
+		'''
 		request = { 'command': 'WHOELSE',
 					 'username': self.username }
 		self.send_request(request)
 
 	def who_last(self, time_frame):
+		'''
+		Send out the 'wholast' request to the server.
+		Check to see the users who were online in the specified time_frame
+		'''
 		request = { 'command': 'WHOLAST',
 					'username': self.username,
 					'time_frame': time_frame }
 		self.send_request(request)
 
 	def send_message(self, command, to, message):
+		'''
+		This method is for processing the following command from client:
+		message <user> <message>
+		broadcast message <message>
+		broadcast user <user> <user> message <message>
+		'''
 		request = { 'command': '',
 					'username': self.username,
 					'to': to,
@@ -101,16 +127,27 @@ class Client(object):
 		self.send_request(request)
 
 	def send_request(self, request):
+		'''
+		Send well-formed request to the server
+		'''
 		try:
 			self.socket.send(json.dumps(request))
 		except:
 			print 'Connection is down....'
 
 class  ClientCLI(object):
+	'''
+	This is the client command line interface
+	'''
 	def __init__(self, host, port):
 		self.client = Client(host, port)
 
 	def start(self):
+		'''
+		Start the client command line interface
+
+		Logout the client when KeyboardInterrupt is catched
+		'''
 		try:
 			self.authentication()
 			self.client.start()
@@ -120,6 +157,9 @@ class  ClientCLI(object):
 			print 'User [', self.client.username, '] has logged out.'
 
 	def authentication(self):
+		'''
+		Reading credentials from the client and send to server for authentication
+		'''
 		while True:
 			username = raw_input('username: ')
 			password = raw_input('password: ')
@@ -174,6 +214,10 @@ class  ClientCLI(object):
 				self.client.send_message(command[0], message_to, user_message[1])
 
 			elif command[0] == 'broadcast':
+				'''
+				Try to catch all the corner cases when client typing message related command
+				If wrong command read, then print the user Instruction.
+				'''
 				message_to = []
 				user_message = command[1]
 				user_group = False

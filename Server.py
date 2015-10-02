@@ -8,7 +8,7 @@ import errno
 import time
 
 BLOCK_TIME = 60
-TIME_OUT = 600
+TIME_OUT = 1800
 CHECK_INTERVAL = 5
 MAX_USERS = 10
 BUFFSIZE = 4096
@@ -28,10 +28,14 @@ class Server:
 		self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.server.bind((ip_address, self.port))
 		self.server.listen(MAX_USERS)
+		# user dict to keep track of user info
 		self.users = {}
 		self.load_userinfo()
 
 	def load_userinfo(self):
+		'''
+		Load the credentials from the user_pass.txt, initialize the dictionary
+		'''
 		with open('user_pass.txt') as file:
 			for line in file:
 				user_info = line.split()
@@ -44,6 +48,17 @@ class Server:
 											 'socket': None }
 
 	def start(self):
+		'''
+		Start a thread for status_check(), every CHECK_INTERVAL seconds, it will go over the
+		user dictionary to see if there is anyone idle for more than TIME_OUT seconds
+
+		Then server starts to wait for new connections from clients, every accepted client 
+		connection then get a new thread to deal with all the requests through out the client
+		alive time.
+
+		When KeyboardInterrupt is triggerd, server would close all the connections between the 
+		client and server, finally close the server's listening socket and exit.
+		'''
 		print 'Chat room server is ready to process messages!'
 		thread.start_new_thread(self.status_check, ())
 		while True:
@@ -78,6 +93,14 @@ class Server:
 			time.sleep(CHECK_INTERVAL)
 
 	def client_listen_thread(self, client_socket, address):
+		'''
+		The thread for each client to accept all of their request.
+
+		If the client crashes instead of normal logout, server side thread would catch 
+		this exception and update the user info.
+
+		For each request it analyze the content and use specific method to process them
+		'''
 		print 'Connection from ', address
 		username = ''
 		while True:
@@ -109,10 +132,9 @@ class Server:
 		After three unsuccessful login attempts from the same IP address, block the user from
 		that IP address for BLOCK_TIME seconds.
 
-		If the user/password combination is valid, assign the user a random port and sends system
-		message to the user. Server adds the user to the self.online_users to keep track of online
-		users. The user should listen on the server assigned port for any incoming
-		message.
+		If the user/password combination is valid, update the user info. Server adds the user 
+		to the self.online_users to keep track of online users. The client_socket would be added
+		into self.connections list, so that server could close all opening socket during shutdown
 
 		If user/password combination is valid but the user is already online, reject the connection
 		'''
@@ -173,7 +195,7 @@ class Server:
 	def logout(self, username, client_socket):
 		'''
 		Remove the user from the self.online_users list, and change the user's status
-		to offline
+		to offline, finally close the server-client connection
 		'''
 		if username in self.users:
 			self.online_users.remove(username)
@@ -190,7 +212,7 @@ class Server:
 		'whoelse' command:
 
  		Retrieve the list of online users and remove the client who requested.
-		Send the list back to the client via client's listening socket
+		Send the list back to the client via client socket
 		'''
 		online_list = list(self.online_users)
 		online_list.remove(data['username'])
@@ -202,6 +224,10 @@ class Server:
 		self.send_response(user, response)
 
 	def who_last(self, data):
+		'''
+		Check the self.users dictionary to see all the users that are online within the client's
+		specified time frame.
+		'''
 		user_list = []
 		for user in self.users:
 			user_dict = self.users[user]
@@ -221,6 +247,16 @@ class Server:
 		self.send_response(user, response)
 
 	def process_messages(self, request):
+		'''
+		This method is for processing the following command from client:
+		message <user> <message>
+		broadcast message <message>
+		broadcast user <user> <user> message <message>
+
+		If the server is unable to deliver the message to certain user, it constructs a list
+		of them and send a reponse to the request client telling the client certain users cannot
+		be found.
+		'''
 		message_to = []
 		not_found = []
 		if not request['to']:
@@ -254,6 +290,9 @@ class Server:
 			self.send_response(self.users[request['username']], response)
 
 	def send_message(self, reciever, request):
+		'''
+		Server send message recieved message to the target client
+		'''
 		message = { 'status': 'SUCCESS',
 					'command': 'MESSAGE',
 					'from': request['username'],
@@ -264,6 +303,12 @@ class Server:
 			return True
 
 	def send_response(self, user, response):
+		'''
+		Server sends its reponse to target client
+
+		If the connection is broken, means client crashes, and server update the user info
+		accordingly
+		'''
 		try:
 			user['socket'].send(json.dumps(response))
 			return True
