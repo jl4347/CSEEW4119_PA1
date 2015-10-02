@@ -50,6 +50,9 @@ class Client(object):
 				response = json.loads(self.socket.recv(BUFFSIZE).strip())
 			except ValueError:
 				print 'Connection is down ...'
+				self.socket.close()
+				thread.interrupt_main()
+				break
 
 			if response['status'] == 'SUCCESS':
 				if response['command'] == 'WHOELSE':
