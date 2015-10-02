@@ -85,7 +85,7 @@ class Server:
 				request = json.loads(client_socket.recv(BUFFSIZE).strip())
 			except ValueError:
 				print 'Client crashes and automatically logout'
-				self.logout(username, client_socket, True)
+				self.logout(username, client_socket)
 				break
 
 			command = request['command']
@@ -94,7 +94,7 @@ class Server:
 			if command == 'AUTH':
 				self.authenticate(client_socket, request, address)
 			elif command == 'LOGOUT':
-				self.logout(request['username'], client_socket, False)
+				self.logout(request['username'], client_socket)
 				break
 			elif command == 'WHOELSE':
 				self.online(request)
@@ -170,7 +170,7 @@ class Server:
 		print user
 		client_socket.send(json.dumps(response))
 
-	def logout(self, username, client_socket, time_out):
+	def logout(self, username, client_socket):
 		'''
 		Remove the user from the self.online_users list, and change the user's status
 		to offline
@@ -180,8 +180,7 @@ class Server:
 			user = self.users[username]
 			self.connections.remove(user['socket'])
 			user['online'] = False
-			if not time_out:
-				user['last_command'] = datetime.datetime.now()
+			user['last_command'] = datetime.datetime.now()
 			user['socket'] = None
 		client_socket.close()
 		print 'User [', username, '] logout successfully' 
@@ -200,7 +199,7 @@ class Server:
 		response = { 'status': 'SUCCESS',
 					 'command': 'WHOELSE',
 					 'message': online_list }
-		self.send_response(user, response, False)
+		self.send_response(user, response)
 
 	def who_last(self, data):
 		user_list = []
@@ -219,7 +218,7 @@ class Server:
 		response = { 'status': 'SUCCESS',
 					 'command': 'WHOLAST',
 					 'message': user_list }
-		self.send_response(user, response, False)
+		self.send_response(user, response)
 
 	def process_messages(self, request):
 		message_to = []
@@ -252,19 +251,19 @@ class Server:
 			response = { 'status': 'WARNING',
 						 'command': 'MESSAGE_FEEDBACK',
 						 'message': 'Users ' + str(not_found) + ' not found' }
-			self.send_response(self.users[request['username']], response, False)
+			self.send_response(self.users[request['username']], response)
 
 	def send_message(self, reciever, request):
 		message = { 'status': 'SUCCESS',
 					'command': 'MESSAGE',
 					'from': request['username'],
 					'message': request['message'] }
-		if not self.send_response(self.users[reciever], message, False):
+		if not self.send_response(self.users[reciever], message):
 			return False
 		else:
 			return True
 
-	def send_response(self, user, response, time_out):
+	def send_response(self, user, response):
 		try:
 			user['socket'].send(json.dumps(response))
 			return True
@@ -275,8 +274,7 @@ class Server:
 				print 'Log out User:', user['username']
 			return False
 		# update user info
-		if not time_out:
-			user['last_command'] = datetime.datetime.now()
+		user['last_command'] = datetime.datetime.now()
  
 def main():
 	if len(sys.argv) != 2:
