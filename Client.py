@@ -6,16 +6,16 @@ import thread
 TIME_OUT = 1800
 MAX_CONN = 100
 HEARTBEAT = 30
+BUFFSIZE = 4096
 
 class Client(object):
 	def __init__(self, host, port):
 		self.server_address = host
 		self.server_port = port
 		self.username = ''
-		self.port = 0
-		self.listen_socket = None
+		self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		self.socket.connect((host, port))
 		self.authorized = False
-		self.started = False
 
 	def start(self):
 		'''
@@ -23,68 +23,56 @@ class Client(object):
 		Start the listen thread to catch any messages coming from server
 		'''
 		if self.authorized:
-			thread.start_new_thread(self.listen, ())
-			self.started = True
+			thread.start_new_thread(self.listen_thread, ())
 		else:
 			raise Exception('User not authorized!')
 
 	def authenticate(self, username, password):
-		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		s.connect((self.server_address, self.server_port))
 		userinfo = { 'command': 'AUTH',
 					 'username': username,
 					 'password': password }
-		s.send(json.dumps(userinfo))
-		response = json.loads(s.recv(4096).strip())
-		s.close()
+		self.socket.send(json.dumps(userinfo))
+		response = json.loads(self.socket.recv(BUFFSIZE).strip())
 		print response['status'], ': User[', username, '] ', response['message']
-		print response
 		if response['status'] == 'SUCCESS':
 			self.username = username
 			self.authorized = True
-			self.port = response['port']
 			return True
 		else:
 			return False
 
-	def listen(self):
-		'''
-		Create a socket binding the port assigned by the server
-		Whenever receives a command from server start a new thread to process the command
-		'''
-		ip = socket.gethostbyname(socket.gethostname())
-		listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		listen_socket.bind((ip, self.port))
-		listen_socket.listen(MAX_CONN)
-		self.listen_socket = listen_socket
-		while True:
-			conn, addr = listen_socket.accept()
-			thread.start_new_thread(self.listen_thread, (conn, addr))
-
-	def listen_thread(self, socket, addr):
+	def listen_thread(self):
 		'''
 		Listen thread to process the command sent from server
 		'''
-		response = json.loads(socket.recv(4096).strip())
-		if response['status'] == 'SUCCESS':
-			if response['command'] == 'WHOELSE':
-				print 'who else: ', response['message']
-			if response['command'] == 'WHOLAST':
-				print 'who last: ', response['message']
-			if response['command'] == 'MESSAGE':
-				print response['from'], ': ', response['message']
-		elif response['status'] == 'WARNING':
-			if response['command'] == 'MESSAGE_FEEDBACK':
-				print response['status'], ': ', response['message']
+		while True:
+			try:
+				response = json.loads(self.socket.recv(BUFFSIZE).strip())
+			except ValueError:
+				print 'Connection is down ...'
 
-		socket.close()
+			if response['status'] == 'SUCCESS':
+				if response['command'] == 'WHOELSE':
+					print 'who else: ', response['message']
+				if response['command'] == 'WHOLAST':
+					print 'who last: ', response['message']
+				if response['command'] == 'MESSAGE':
+					print response['from'], ': ', response['message']
+			elif response['status'] == 'WARNING':
+				if response['command'] == 'MESSAGE_FEEDBACK':
+					print response['status'], ': ', response['message']
+			elif response['status'] == 'ERROR':
+				if response['command'] == 'LOGOUT':
+					print response['status'], ': ', response['message']
+					self.socket.close()
+					thread.interrupt_main()
+					break
 
 	def logout(self):
 		request = { 'command': 'LOGOUT',
-					 'username': self.username }
+					'username': self.username }
 		self.send_request(request)
-		# close the listening socket
-		self.listen_socket.close()
+		self.socket.close()
 
 	def online_users(self):
 		request = { 'command': 'WHOELSE',
@@ -111,12 +99,9 @@ class Client(object):
 
 	def send_request(self, request):
 		try:
-			s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-			s.connect((self.server_address, self.server_port))
-			s.send(json.dumps(request))
-			s.close()
+			self.socket.send(json.dumps(request))
 		except:
-			print 'Server is down....'
+			print 'Connection is down....'
 
 class  ClientCLI(object):
 	def __init__(self, host, port):
@@ -128,8 +113,7 @@ class  ClientCLI(object):
 			self.client.start()
 			self.command()
 		except KeyboardInterrupt, SystemExit:
-			if self.client.started:
-				self.client.logout()
+			self.client.logout()
 			print 'User [', self.client.username, '] has logged out.'
 
 	def authentication(self):
@@ -146,8 +130,8 @@ class  ClientCLI(object):
 		'''
 		Take commands from client's command line interface
 		'''
-		print 'Command:'
 		while True:
+			print 'Command:'
 			commands = raw_input('')
 			if len(commands) == 0:
 				continue
@@ -156,7 +140,7 @@ class  ClientCLI(object):
 			if command[0] == 'logout':
 				self.client.logout()
 				print 'User [', self.client.username, '] has logged out.'
-				sys.exit()
+				sys.exit(0)
 
 			elif command[0] == 'whoelse':
 				self.client.online_users()

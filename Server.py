@@ -4,10 +4,14 @@ import json
 import thread
 import datetime
 import random
+import errno
+import time
 
 BLOCK_TIME = 60
-DEAD_ALIVE = 60
+TIME_OUT = 600
+CHECK_INTERVAL = 5
 MAX_USERS = 10
+BUFFSIZE = 4096
 
 class Server:
 	"""
@@ -18,6 +22,12 @@ class Server:
 		self.port = port
 		# User info
 		self.online_users = []
+		self.connections = []
+		# Create the listening socket to wait for connection from clients
+		ip_address = socket.gethostbyname(socket.gethostname())
+		self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		self.server.bind((ip_address, self.port))
+		self.server.listen(MAX_USERS)
 		self.users = {}
 		self.load_userinfo()
 
@@ -29,45 +39,69 @@ class Server:
 											 # ip is a dict since we are blocking on the 
 											 # (ip, username) pair
 											 'ip_address': {},
-											 'ip': '',
-											 'port': 0,
 											 'online': False,
 											 'last_command': None,
-											 'last_seen': None }
+											 'socket': None }
 
 	def start(self):
-		ip_address = socket.gethostbyname(socket.gethostname())
-		server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		server_socket.bind((ip_address, self.port))
-		server_socket.listen(MAX_USERS)
 		print 'Chat room server is ready to process messages!'
+		thread.start_new_thread(self.status_check, ())
 		while True:
 			try:
-				conn, addr = server_socket.accept()
-				thread.start_new_thread(self.client_thread, (conn, addr))
+				print 'waiting for new connections'
+				conn, addr = self.server.accept()
+				print 'connection accepted'
+				thread.start_new_thread(self.client_listen_thread, (conn, addr))
 			except KeyboardInterrupt, SystemExit:
-				server_socket.close()
-				print 'Chat room shut down....'
-				sys.exit()
+				print 'Server shutting down....'
+				for conn in self.connections:
+					conn.close()
 
-	def client_thread(self, socket, address):
+				self.server.close()
+				sys.exit(0)
+
+	def status_check(self):
+		'''
+		Perform regular status check for user inactivity every CHECK_INTERVAL seconds
+		Logout the user if he/she has stayed idle for more than 30min
+		'''
+		response = { 'status': 'ERROR',
+					 'command': 'LOGOUT',
+					 'message': 'Automatic logout due to inactivity.'}
+		while True:
+			for username in self.users:
+				user = self.users[username]
+				if user['online']:
+					idle_time = (datetime.datetime.now() - user['last_command']).total_seconds()
+					if idle_time > TIME_OUT:
+						user['socket'].send(json.dumps(response))
+			time.sleep(CHECK_INTERVAL)
+
+	def client_listen_thread(self, client_socket, address):
 		print 'Connection from ', address
-		request = json.loads(socket.recv(4096).strip())
-		command = request['command']
-		print command
+		username = ''
+		while True:
+			try:
+				request = json.loads(client_socket.recv(BUFFSIZE).strip())
+			except ValueError:
+				print 'Client crashes and automatically logout'
+				self.logout(username, client_socket, True)
+				break
 
-		if command == 'AUTH':
-			self.authenticate(socket, request, address)
-		elif command == 'LOGOUT':
-			self.logout(request['username'])
-		elif command == 'WHOELSE':
-			self.online(request)
-		elif command == 'WHOLAST':
-			self.who_last(request)
-		elif command[:7] == 'MESSAGE':
-			self.process_messages(request)
-			
-		socket.close()
+			command = request['command']
+			username = request['username']
+			print request
+			if command == 'AUTH':
+				self.authenticate(client_socket, request, address)
+			elif command == 'LOGOUT':
+				self.logout(request['username'], client_socket, False)
+				break
+			elif command == 'WHOELSE':
+				self.online(request)
+			elif command == 'WHOLAST':
+				self.who_last(request)
+			elif command[:7] == 'MESSAGE':
+				self.process_messages(request)
 
 	def authenticate(self, client_socket, data, address):
 		'''
@@ -82,9 +116,11 @@ class Server:
 
 		If user/password combination is valid but the user is already online, reject the connection
 		'''
+
 		username = data['username']
 		ip = address[0]
 		response = {}
+		user = {}
 		if username in self.users:
 			user = self.users[username]
 			# create the new user-ip pair if not exist
@@ -111,16 +147,16 @@ class Server:
 								 	 'message': 'user is already online.' }
 					else:
 						self.online_users.append(username)
+						print 'Users online:', str(self.online_users)
 						user['online'] = True
-						user['ip'] = ip
 						user['last_command'] = datetime.datetime.now()
 						# reset the login attempts
 						user_ip['login_attempts'] = 0
 						user_ip['last_attempt'] = datetime.datetime.now()
-						user['port'] = random.randint(10000, 50000)
 						response = { 'status': 'SUCCESS',
-									 'port': user['port'],
 								 	 'message': 'Welcome to the simple chat server!' }
+						self.connections.append(client_socket)
+						user['socket'] = client_socket
 
 				else:
 					user_ip['login_attempts'] += 1
@@ -134,17 +170,21 @@ class Server:
 		print user
 		client_socket.send(json.dumps(response))
 
-	def logout(self, username):
+	def logout(self, username, client_socket, time_out):
 		'''
 		Remove the user from the self.online_users list, and change the user's status
 		to offline
 		'''
-		self.online_users.remove(username)
-		user = self.users[username]
-		user['ip'] = ''
-		user['online'] = False
-		user['port'] = 0
-		user['last_command'] = datetime.datetime.now()
+		if username in self.users:
+			self.online_users.remove(username)
+			user = self.users[username]
+			self.connections.remove(user['socket'])
+			user['online'] = False
+			if not time_out:
+				user['last_command'] = datetime.datetime.now()
+			user['socket'] = None
+		client_socket.close()
+		print 'User [', username, '] logout successfully' 
 
 	def online(self, data):
 		'''
@@ -160,7 +200,7 @@ class Server:
 		response = { 'status': 'SUCCESS',
 					 'command': 'WHOELSE',
 					 'message': online_list }
-		self.send_response(user, response)
+		self.send_response(user, response, False)
 
 	def who_last(self, data):
 		user_list = []
@@ -179,7 +219,7 @@ class Server:
 		response = { 'status': 'SUCCESS',
 					 'command': 'WHOLAST',
 					 'message': user_list }
-		self.send_response(user, response)
+		self.send_response(user, response, False)
 
 	def process_messages(self, request):
 		message_to = []
@@ -212,33 +252,31 @@ class Server:
 			response = { 'status': 'WARNING',
 						 'command': 'MESSAGE_FEEDBACK',
 						 'message': 'Users ' + str(not_found) + ' not found' }
-			self.send_response(self.users[request['username']], response)
+			self.send_response(self.users[request['username']], response, False)
 
 	def send_message(self, reciever, request):
 		message = { 'status': 'SUCCESS',
 					'command': 'MESSAGE',
 					'from': request['username'],
 					'message': request['message'] }
-		if not self.send_response(self.users[reciever], message):
+		if not self.send_response(self.users[reciever], message, False):
 			return False
 		else:
 			return True
 
-	def send_response(self, user, response):
+	def send_response(self, user, response, time_out):
 		try:
-			s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-			s.connect((user['ip'], user['port']))
-			s.send(json.dumps(response))
-			s.close()
+			user['socket'].send(json.dumps(response))
 			return True
 		except:
 			print 'Unable to deliver message to ', user['ip'], ':', user['port']
 			if user['online']:
-				self.logout(user['username'])
+				self.logout(user['username'], user['socket'], True)
 				print 'Log out User:', user['username']
 			return False
 		# update user info
-		user['last_command'] = datetime.datetime.now()
+		if not time_out:
+			user['last_command'] = datetime.datetime.now()
  
 def main():
 	if len(sys.argv) != 2:
